@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>browse-map</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="css/ol.css" type="text/css">
+    <script src="js/ol-debug.js"></script>
+    <style>
+        /*zoom map*/
+        a.skiplink {
+            position: absolute;
+            clip: rect(1px, 1px, 1px, 1px);
+            padding: 0;
+            border: 0;
+            height: 1px;
+            width: 1px;
+            overflow: hidden;
+        }
+        a.skiplink:focus {
+            clip: auto;
+            height: auto;
+            width: auto;
+            background-color: #fff;
+            padding: 0.3em;
+        }
+        /*fullScreen*/
+        .map:-moz-full-screen {
+            height: 100%;
+        }
+        .map:-webkit-full-screen {
+            height: 100%;
+        }
+        .map:-ms-fullscreen {
+            height: 100%;
+        }
+        .map:fullscreen {
+            height: 100%;
+        }
+        .ol-rotate {
+            top: 3em;
+        }
+
+        /*overview*/
+        .ol-custom-overviewmap,
+        .ol-custom-overviewmap.ol-uncollapsible {
+            bottom: auto;
+            left: auto;
+            right: 8px;
+            top: 42px;
+        }
+
+        .ol-custom-overviewmap:not(.ol-collapsed)  {
+            border: 1px solid black;
+        }
+
+        .ol-custom-overviewmap .ol-overviewmap-map {
+            border: none;
+            width: 300px;
+        }
+
+        .ol-custom-overviewmap .ol-overviewmap-box {
+            border: 2px solid red;
+        }
+
+        .ol-custom-overviewmap:not(.ol-collapsed) button{
+            bottom: auto;
+            left: auto;
+            right: 1px;
+            top: 1px;
+        }
+
+        .ol-rotate {
+            top: 170px;
+            right: 0;
+        }
+
+        /*popup*/
+        .ol-popup {
+            position: absolute;
+            background-color: white;
+            -webkit-filter: drop-shadow(0 1px 4px rgba(0,0,0,0.2));
+            filter: drop-shadow(0 1px 4px rgba(0,0,0,0.2));
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #cccccc;
+            bottom: 12px;
+            left: -50px;
+            min-width: 280px;
+        }
+        .ol-popup:after, .ol-popup:before {
+            top: 100%;
+            border: solid transparent;
+            content: " ";
+            height: 0;
+            width: 0;
+            position: absolute;
+            pointer-events: none;
+        }
+        .ol-popup:after {
+            border-top-color: white;
+            border-width: 10px;
+            left: 48px;
+            margin-left: -10px;
+        }
+        .ol-popup:before {
+            border-top-color: #cccccc;
+            border-width: 11px;
+            left: 48px;
+            margin-left: -11px;
+        }
+        .ol-popup-closer {
+            text-decoration: none;
+            position: absolute;
+            top: 2px;
+            right: 8px;
+        }
+        .ol-popup-closer:after {
+            content: "关闭";
+        }
+        code {
+            background-color: #f9f2f4;
+            border-radius: 4px;
+            color: #c7254e;
+            font-size: 90%;
+            padding: 2px 4px;
+        }
+        p {
+            margin: 0 0 10px;
+        }
+    </style>
+</head>
+<body>
+<a class="skiplink" href="#map">Go to map</a>
+<div id="map" class="map" tabindex="0"></div>
+<div id="popup" class="ol-popup">
+    <a href="#" id="popup-closer" class="ol-popup-closer"></a>
+    <div id="popup-content"></div>
+</div>
+<button id="zoom-out">放大</button>
+<button id="zoom-in">缩小</button>
+<button id="show-aerial">显示航拍图</button>
+<button id="close-aerial">隐藏航拍图</button>
+<button id="pan-to-address">定位到南宁市</button>
+<div id="mouse-position"></div>
+<form>
+    <label>坐标系 </label>
+    <select id="projection">
+        <option value="EPSG:4326">EPSG:4326</option>
+        <option value="EPSG:3857">EPSG:3857</option>
+    </select>
+    <label>精度 </label>
+    <input id="precision" type="number" min="0" max="12" value="4"/>
+</form>
+<script>
+    var mainLayer = new ol.layer.Tile({
+        source: new ol.source.OSM()
+    });
+    var tileLayer = new ol.layer.Tile({
+        source: new ol.source.MapQuest({layer: 'sat'}),
+        visible:false
+    });
+
+    var view = new ol.View({
+        center: ol.proj.fromLonLat([108.2909, 22.8116]),
+        zoom: 7
+    });
+
+    var mousePositionControl = new ol.control.MousePosition({
+        coordinateFormat: ol.coordinate.createStringXY(4),
+        projection: 'EPSG:4326',
+        className: 'custom-mouse-position',
+        target: document.getElementById('mouse-position'),
+        undefinedHTML: '&nbsp;'
+    });
+    var overviewMapControl = new ol.control.OverviewMap({
+        className: 'ol-overviewmap ol-custom-overviewmap',
+        layers: [
+            new ol.layer.Tile({
+                source: new ol.source.OSM()
+            })
+        ],
+        collapseLabel: '\u00BB',
+        label: '\u00AB',
+        collapsed: false
+    });
+    var zoomSilderControl = new ol.control.ZoomSlider();
+
+    function createStyle(src, img) {
+        return new ol.style.Style({
+            image: new ol.style.Icon(/** @type {olx.style.IconOptions} */ ({
+                anchor: [0.5, 0.96],
+                src: src,
+                img: img,
+                imgSize: img ? [img.width, img.height] : undefined
+            }))
+        });
+    }
+    var iconFeature1 = new ol.Feature(new ol.geom.Point(ol.proj.fromLonLat([108.3036, 22.8325])));
+    iconFeature1.set('style', createStyle('data/icon.png', undefined));
+    var iconFeature2 = new ol.Feature(new ol.geom.Point(ol.proj.fromLonLat([109.6089, 23.1031])));
+    iconFeature2.set('style', createStyle('data/icon.png', undefined));
+    var iconFeature3 = new ol.Feature(new ol.geom.Point(ol.proj.fromLonLat([109.2329, 23.7527])));
+    iconFeature3.set('style', createStyle('data/icon.png', undefined));
+
+    var vectorLayer = new ol.layer.Vector({
+        style: function(feature) { return feature.get('style'); },
+        source: new ol.source.Vector({ features: [iconFeature1,iconFeature2,iconFeature3] })
+    });
+
+    /*popup*/
+    var container = document.getElementById('popup');
+    var content = document.getElementById('popup-content');
+    var closer = document.getElementById('popup-closer');
+
+    closer.onclick = function() {
+        overlay.setPosition(undefined);
+        closer.blur();
+        return false;
+    };
+
+    var overlay = new ol.Overlay(/** @type {olx.OverlayOptions} */ ({
+        element: container,
+        autoPan: true,
+        autoPanAnimation: {
+            duration: 250
+        }
+    }));
+
+    var map = new ol.Map({
+        target: 'map',
+        layers: [mainLayer,tileLayer,vectorLayer],
+        view: view,
+        overlays: [overlay],
+        controls: ol.control.defaults({
+            attributionOptions: /** @type {olx.control.AttributionOptions} */ ({
+                collapsible: false
+            })
+        }),
+        controls: ol.control.defaults().extend([
+            new ol.control.ScaleLine(),new ol.control.FullScreen(),mousePositionControl,overviewMapControl,zoomSilderControl
+        ]),
+        interactions: ol.interaction.defaults().extend([
+            new ol.interaction.DragRotateAndZoom()
+        ])
+    });
+
+    map.on('singleclick', function(evt) {
+        var coordinate = evt.coordinate;
+        var hdms = ol.coordinate.toStringHDMS(ol.proj.transform(
+                coordinate, 'EPSG:3857', 'EPSG:4326'));
+
+        content.innerHTML = '<p>当前坐标是：</p><code>' + hdms +
+                '</code>';
+        overlay.setPosition(coordinate);
+    });
+
+    document.getElementById('zoom-out').onclick = function() {
+        var view = map.getView();
+        var zoom = view.getZoom();
+        view.setZoom(zoom - 1);
+    };
+
+    document.getElementById('zoom-in').onclick = function() {
+        var view = map.getView();
+        var zoom = view.getZoom();
+        view.setZoom(zoom + 1);
+    };
+
+    document.getElementById('show-aerial').onclick = function() {
+        mainLayer.setVisible(false);
+        tileLayer.setVisible(true);
+        map.render();
+    };
+
+    document.getElementById('close-aerial').onclick = function() {
+        mainLayer.setVisible(true);
+        tileLayer.setVisible(false);
+        map.render();
+    };
+
+    var london = ol.proj.fromLonLat([-0.12755, 51.507222]);
+    var nanning = ol.proj.fromLonLat([108.3036, 22.8325]);
+    var panToAddress = document.getElementById('pan-to-address');
+    panToAddress.addEventListener('click', function() {
+        var pan = ol.animation.pan({
+            duration: 500,
+            source: /** @type {ol.Coordinate} */ (view.getCenter())
+        });
+        map.beforeRender(pan);
+        view.setCenter(nanning);
+        view.setZoom(13);
+    }, false);
+
+    var projectionSelect = document.getElementById('projection');
+    projectionSelect.addEventListener('change', function(event) {
+        mousePositionControl.setProjection(ol.proj.get(event.target.value));
+    });
+
+    var precisionInput = document.getElementById('precision');
+    precisionInput.addEventListener('change', function(event) {
+        var format = ol.coordinate.createStringXY(event.target.valueAsNumber);
+        mousePositionControl.setCoordinateFormat(format);
+    });
+
+</script>
+</body>
+</html>
